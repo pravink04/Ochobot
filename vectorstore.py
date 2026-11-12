@@ -12,6 +12,13 @@ from config import CANDIDATES, CHROMA_DIR, EMBEDDING_MODEL, TOP_K
 _tok = re.compile(r"\w+")
 
 
+def _meta(m) -> dict:
+    """Stored metadata can come back as None/partial; always return a complete dict."""
+    base = {"doc_id": "", "filename": "unknown", "page": 0, "section": "", "chunk_index": 0}
+    base.update(m or {})
+    return base
+
+
 def _tokens(text: str) -> list[str]:
     return _tok.findall(text.lower())
 
@@ -54,13 +61,16 @@ class VectorStore:
         res = self.col.get(include=["metadatas"])
         docs: dict[str, dict] = {}
         for m in res["metadatas"]:
+            m = _meta(m)
+            if not m["doc_id"]:
+                continue
             d = docs.setdefault(m["doc_id"], {"doc_id": m["doc_id"], "filename": m["filename"], "chunks": 0})
             d["chunks"] += 1
         return sorted(docs.values(), key=lambda d: d["filename"].lower())
 
     def get_doc_chunks(self, doc_id: str) -> list[dict]:
         res = self.col.get(where={"doc_id": doc_id}, include=["documents", "metadatas"])
-        items = [{**m, "id": i, "text": t} for i, t, m in zip(res["ids"], res["documents"], res["metadatas"])]
+        items = [{**_meta(m), "id": i, "text": t} for i, t, m in zip(res["ids"], res["documents"], res["metadatas"])]
         return sorted(items, key=lambda c: c["chunk_index"])
 
     def search(self, query: str, k: int = TOP_K, doc_ids: list[str] | None = None) -> list[dict]:
@@ -84,7 +94,7 @@ class VectorStore:
         )
         vec_rank = []
         for cid, doc, meta, dist in zip(v["ids"][0], v["documents"][0], v["metadatas"][0], v["distances"][0]):
-            by_id[cid] = {**meta, "id": cid, "text": doc, "similarity": round(1 - dist, 4)}
+            by_id[cid] = {**_meta(meta), "id": cid, "text": doc, "similarity": round(1 - dist, 4)}
             vec_rank.append(cid)
 
         # 2) keyword search (BM25) over the same filtered corpus
@@ -96,7 +106,7 @@ class VectorStore:
                 if scores[j] <= 0:
                     break
                 bm_rank.append(ids[j])
-                by_id.setdefault(ids[j], {**metas[j], "id": ids[j], "text": docs[j], "similarity": 0.0})
+                by_id.setdefault(ids[j], {**_meta(metas[j]), "id": ids[j], "text": docs[j], "similarity": 0.0})
 
         # 3) Reciprocal Rank Fusion
         fused: dict[str, float] = defaultdict(float)

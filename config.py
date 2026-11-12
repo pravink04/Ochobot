@@ -6,11 +6,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 BASE_DIR = Path(__file__).parent
-DATA_DIR = Path("/tmp/ochobot_data")
+# Set DATA_DIR in .env to keep the database outside synced folders (OneDrive etc.)
+DATA_DIR = Path(os.getenv("DATA_DIR") or (BASE_DIR / "data"))
 CHROMA_DIR = DATA_DIR / "chroma"
-
 DATA_DIR.mkdir(parents=True, exist_ok=True)
-CHROMA_DIR.mkdir(parents=True, exist_ok=True)
 
 # ---- LLM ----
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "groq").lower()
@@ -23,7 +22,11 @@ DEFAULT_MODELS = {
 LLM_MODEL = os.getenv("LLM_MODEL") or DEFAULT_MODELS.get(LLM_PROVIDER, "")
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
 # Optional automatic failover when the main provider is rate-limited (e.g. groq -> gemini)
-LLM_FALLBACK = os.getenv("LLM_FALLBACK", "gemini").lower()
+LLM_FALLBACK = os.getenv("LLM_FALLBACK", "").lower()
+# Optional explicit failover order, e.g. "groq:openai/gpt-oss-120b,groq:openai/gpt-oss-20b,gemini:gemini-3.8-flash"
+LLM_CHAIN = os.getenv("LLM_CHAIN", "").strip()
+# When a model fails, look up the other models each provider offers and add them to the chain (0 = off)
+LLM_AUTO_DISCOVER = os.getenv("LLM_AUTO_DISCOVER", "1") != "0"
 
 # ---- Embeddings (local & free) ----
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")

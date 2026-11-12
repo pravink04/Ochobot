@@ -1,4 +1,7 @@
 """Streamlit UI for the Enterprise Knowledge Intelligence & Decision Copilot."""
+import traceback
+from pathlib import Path
+
 import pandas as pd
 import streamlit as st
 
@@ -12,17 +15,58 @@ from vectorstore import VectorStore
 st.set_page_config(page_title="Enterprise Knowledge Copilot", page_icon="⚡", layout="wide")
 apply_theme()
 
+THEME_TOML = """[theme]
+base = "dark"
+primaryColor = "#19e3ff"
+backgroundColor = "#030712"
+secondaryBackgroundColor = "#07142b"
+textColor = "#d6f4ff"
+font = "sans serif"
+
+[client]
+toolbarMode = "minimal"
+
+[server]
+showEmailPrompt = false
+"""
+
+
+def check_theme_config():
+    """Streamlit colours (tags, tab underline, inputs) come from .streamlit/config.toml, not from CSS.
+    If that file is missing, or the app was started from another folder, tell the user how to fix it."""
+    cfg = Path(__file__).parent / ".streamlit" / "config.toml"
+    created = not cfg.exists()
+    if created:
+        cfg.parent.mkdir(exist_ok=True)
+        cfg.write_text(THEME_TOML, encoding="utf-8")
+    if created:
+        st.warning("The theme file `.streamlit/config.toml` was missing, so I created it. "
+                   "Stop the app (Ctrl+C) and start it again once to apply the full blue theme.")
+    elif str(st.get_option("theme.primaryColor")).lower() != "#19e3ff":
+        st.warning("Streamlit did not load the theme file, so some colours are still default (red tags, red tab "
+                   "underline). Stop the app (Ctrl+C), `cd` into the project folder (the one that contains "
+                   "`app.py` and `.streamlit`) and run `python -m streamlit run app.py` again.")
+
+
+check_theme_config()
+
 AVATARS = {"user": "🧑‍💻", "assistant": "🤖"}
 
 
+# Streamlit keeps cached objects alive across code edits, so an updated llm.py/rag.py would be ignored
+# until a full restart. Keying the cache on the newest .py modification time rebuilds the engine
+# automatically whenever any source file changes.
+CODE_VERSION = max(p.stat().st_mtime for p in Path(__file__).parent.glob("*.py"))
+
+
 @st.cache_resource(show_spinner="Loading models and vector store…")
-def get_engine():
+def get_engine(code_version: float):
     store = VectorStore()
     return store, RAGEngine(store, LLM())
 
 
 try:
-    store, engine = get_engine()
+    store, engine = get_engine(CODE_VERSION)
 except Exception as e:
     st.error(f"Startup error: {e}")
     st.stop()
@@ -44,6 +88,14 @@ def render_sources(sources, only_cited=False):
             st.caption(s["text"][:700] + ("…" if len(s["text"]) > 700 else ""))
 
 
+def show_error(e: Exception):
+    """Show a readable error and keep the full traceback (also printed to the terminal)."""
+    traceback.print_exc()
+    st.error(f"{type(e).__name__}: {e}")
+    with st.expander("Technical details"):
+        st.code(traceback.format_exc())
+
+
 def badge(level: str):
     st.markdown(f'<span class="badge {level}">Confidence: {level}</span>', unsafe_allow_html=True)
 
@@ -63,7 +115,13 @@ with st.sidebar:
                 {"indexed": st.success, "duplicate": st.info, "empty": st.warning}[status](
                     f"{f.name}: {status}" + (f" ({n} passages)" if n else ""))
             except Exception as e:
-                st.error(f"{f.name}: {e}")
+                msg = str(e)
+                if "readonly" in msg.lower() or "1032" in msg:
+                    st.error(f"{f.name}: the local database is locked or read-only. Stop every running copy "
+                             "of this app, delete the data/chroma folder, make sure the project is not inside "
+                             "OneDrive, then restart and index again.")
+                else:
+                    st.error(f"{f.name}: {e}")
 
     docs = store.list_documents()
     st.divider()
@@ -81,6 +139,11 @@ with st.sidebar:
     else:
         active_ids, name_by_id = [], {}
         st.info("No documents yet. Upload a file to begin.")
+
+    with st.expander("Model routing"):
+        st.caption("If a model hits a limit or goes down, the next one answers automatically.")
+        for s in engine.llm.status():
+            st.markdown(f"**{s['model']}**  \n{s['state']}")
 
     if st.button("Clear chat", width="stretch"):
         st.session_state.messages = []
@@ -104,6 +167,8 @@ with tab_chat:
             st.markdown(m["content"])
             if m["role"] == "assistant" and m.get("confidence"):
                 badge(m["confidence"])
+                if m.get("model"):
+                    st.caption(f"Answered by {m['model']}")
                 render_sources(m.get("sources"))
 
     if q := st.chat_input("Ask a question about your documents…"):
@@ -120,12 +185,17 @@ with tab_chat:
                     try:
                         res = engine.answer(q, history, active_ids)
                     except Exception as e:
-                        res = {"answer": f"⚠️ Error: {e}", "sources": [], "confidence": "Low"}
+                        traceback.print_exc()
+                        res = {"answer": f"⚠️ Error ({type(e).__name__}): {e}", "sources": [], "confidence": "Low"}
+            model_used = engine.llm.last_used if res.get("sources") else ""
             st.markdown(res["answer"])
             badge(res["confidence"])
+            if model_used:
+                st.caption(f"Answered by {model_used}")
             render_sources(res["sources"])
         st.session_state.messages.append({"role": "assistant", "content": res["answer"],
-                                          "sources": res["sources"], "confidence": res["confidence"]})
+                                          "sources": res["sources"], "confidence": res["confidence"],
+                                          "model": model_used})
 
 # ---------- Summarise ----------
 with tab_sum:
@@ -139,7 +209,7 @@ with tab_sum:
                 st.markdown(text)
                 st.download_button("Download summary", text, file_name="summary.md")
             except Exception as e:
-                st.error(e)
+                show_error(e)
 
 # ---------- Compare ----------
 with tab_cmp:
@@ -158,7 +228,7 @@ with tab_cmp:
                     render_sources(res["sources"])
                     st.download_button("Download comparison", res["answer"], file_name="comparison.md")
                 except Exception as e:
-                    st.error(e)
+                    show_error(e)
 
 # ---------- Actions ----------
 with tab_act:
@@ -190,4 +260,4 @@ with tab_act:
                             st.markdown(f"- {r}")
                     render_sources(res.get("sources"))
                 except Exception as e:
-                    st.error(e)
+                    show_error(e)
