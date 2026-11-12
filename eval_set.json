@@ -1,0 +1,7 @@
+[
+  {"question": "How many days of annual leave do employees get in 2024?", "expected_doc": "leave_policy_2024.txt", "expected_keywords": ["20"]},
+  {"question": "How many days can be carried forward under the 2023 leave policy?", "expected_doc": "leave_policy_2023.txt", "expected_keywords": ["5"]},
+  {"question": "What is the maternity leave duration in the 2024 policy?", "expected_doc": "leave_policy_2024.txt", "expected_keywords": ["26"]},
+  {"question": "After how many days is a medical certificate needed in the 2024 policy?", "expected_doc": "leave_policy_2024.txt", "expected_keywords": ["3"]},
+  {"question": "What is the stock option vesting schedule?", "expected_doc": null, "expected_keywords": []}
+]
