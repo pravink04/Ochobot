@@ -6,9 +6,11 @@ from dotenv import load_dotenv
 load_dotenv()
 
 BASE_DIR = Path(__file__).parent
-DATA_DIR = BASE_DIR / "data"
+DATA_DIR = Path("/tmp/ochobot_data")
 CHROMA_DIR = DATA_DIR / "chroma"
-DATA_DIR.mkdir(exist_ok=True)
+
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+CHROMA_DIR.mkdir(parents=True, exist_ok=True)
 
 # ---- LLM ----
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "groq").lower()
