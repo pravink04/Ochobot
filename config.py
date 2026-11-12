@@ -23,7 +23,7 @@ DEFAULT_MODELS = {
 LLM_MODEL = os.getenv("LLM_MODEL") or DEFAULT_MODELS.get(LLM_PROVIDER, "")
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
 # Optional automatic failover when the main provider is rate-limited (e.g. groq -> gemini)
-LLM_FALLBACK = os.getenv("LLM_FALLBACK", "").lower()
+LLM_FALLBACK = os.getenv("LLM_FALLBACK", "gemini").lower()
 
 # ---- Embeddings (local & free) ----
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
